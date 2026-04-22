@@ -1,21 +1,23 @@
 import os
 import logging
 import sqlite3
-import asyncio
-import nest_asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
+from starlette.applications import Starlette
+from starlette.routing import Route
+from starlette.requests import Request
+from starlette.responses import Response, PlainTextResponse
+import uvicorn
 
 # লগিং সেটআপ
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# কনফিগারেশন
-BOT_TOKEN = os.getenv("BOT_TOKEN")  # Render এনভায়রনমেন্ট ভেরিয়েবল থেকে নিবে
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = 8508012498
 DB_NAME = "users.db"
 
-# ডাটাবেজ ফাংশন
+# ---------- ডাটাবেজ ফাংশন ----------
 def init_db():
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
@@ -49,14 +51,13 @@ def remove_user(user_id: int):
     conn.commit()
     conn.close()
 
-# ব্রডকাস্ট মোডের জন্য গ্লোবাল ভেরিয়েবল
+# ---------- ব্রডকাস্ট মোড ----------
 broadcast_mode = False
 
-# /start কমান্ড হ্যান্ডলার
+# ---------- বট হ্যান্ডলার ----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     add_user(user.id)
-
     keyboard = [
         [InlineKeyboardButton("১. কঁচি বাচ্চাদের ভিডিও কালেকশন চ্যানেল", url="https://t.me/+GjG_tV4FHRc5OGY1")],
         [InlineKeyboardButton("২. ইংরেজিতে ভিডিও কালেকশন চ্যানেল", url="https://t.me/+1pQielc3rKw3ZWNl")],
@@ -67,78 +68,91 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("৭. গ্রুপ লিংক", url="https://t.me/+NjZfX0EyzTRlOWRl")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-
-    message_text = (
-        "👉👉 anyone buy group/channels dm me : @A15287 👈👈\n\n"
-        "নিচের বাটনগুলোতে ক্লিক করে কন্টেন্ট দেখুন:"
+    await update.message.reply_text(
+        "👉👉 anyone buy group/channels dm me : @A15287 👈👈\n\nনিচের বাটনে ক্লিক করুন:",
+        reply_markup=reply_markup
     )
-    await update.message.reply_text(message_text, reply_markup=reply_markup)
 
-# /admin কমান্ড হ্যান্ডলার
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global broadcast_mode
-    user_id = update.effective_user.id
-    if user_id != ADMIN_ID:
-        await update.message.reply_text("আপনি এই কমান্ড ব্যবহার করার অনুমতি রাখেন না।")
+    if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("অনুমতি নেই।")
         return
-
     broadcast_mode = not broadcast_mode
-    if broadcast_mode:
-        await update.message.reply_text(
-            "📢 Broadcast mode ON\n\n"
-            "এখন আপনি যা কিছু পাঠাবেন, তা ডাটাবেজের সব ইউজারের কাছে ফরওয়ার্ড হবে।\n"
-            "বন্ধ করতে আবার /admin দিন।"
-        )
-    else:
-        await update.message.reply_text("🔕 Broadcast mode OFF")
+    status = "ON" if broadcast_mode else "OFF"
+    await update.message.reply_text(f"📢 Broadcast mode {status}\n{ 'এখন যেকোনো মেসেজ সবাই পাবে' if broadcast_mode else 'বন্ধ করা হয়েছে' }")
 
-# ব্রডকাস্ট হ্যান্ডলার (অ্যাডমিনের সব মেসেজ ইউজারদের কাছে কপি করে)
 async def broadcast_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global broadcast_mode
-    user_id = update.effective_user.id
-    if user_id != ADMIN_ID or not broadcast_mode:
+    if update.effective_user.id != ADMIN_ID or not broadcast_mode:
         return
     if update.message and update.message.text and update.message.text.startswith('/'):
-        return  # কমান্ড ইগনোর
-
+        return
     message = update.message
     users = get_all_users()
-    success_count = 0
-    fail_count = 0
-
+    success = 0
+    fail = 0
     for uid in users:
         try:
             await context.bot.copy_message(chat_id=uid, from_chat_id=message.chat_id, message_id=message.message_id)
-            success_count += 1
-        except Exception as e:
-            logger.warning(f"Failed to send to {uid}: {e}")
-            if "chat not found" in str(e).lower() or "user deactivated" in str(e).lower():
-                remove_user(uid)
-            fail_count += 1
+            success += 1
+        except Exception:
+            remove_user(uid)
+            fail += 1
+    await update.message.reply_text(f"✅ ব্রডকাস্ট শেষ!\nসফল: {success}\nব্যর্থ: {fail}")
 
-    await update.message.reply_text(f"✅ ব্রডকাস্ট সম্পন্ন!\nসফল: {success_count}\nব্যর্থ: {fail_count}")
-
-# ইনলাইন বাটন কলব্যাক (প্রয়োজনীয় নয়, কিন্তু রাখা ভালো)
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.callback_query.answer()
 
-# মেইন ফাংশন (এখানে nest_asyncio ব্যবহার করা হয়েছে)
-async def main_async():
+# ---------- ওয়েবহুক এন্ডপয়েন্ট ----------
+async def telegram_webhook(request: Request):
+    """Telegram থেকে আসা আপডেট হ্যান্ডেল করে"""
+    data = await request.json()
+    update = Update.de_json(data, bot_app.bot)
+    await bot_app.process_update(update)
+    return Response(status_code=200)
+
+async def health_check(request: Request):
+    """Render-এর হেলথ চেকের জন্য"""
+    return PlainTextResponse("OK")
+
+# ---------- মেইন ফাংশন ----------
+bot_app = None
+
+async def main():
+    global bot_app
     init_db()
-    app = Application.builder().token(BOT_TOKEN).build()
 
-    # সব হ্যান্ডলার যোগ করুন
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("admin", admin_command))
-    app.add_handler(MessageHandler(~filters.COMMAND, broadcast_handler), group=1)
-    app.add_handler(CallbackQueryHandler(button_callback))
+    # বট অ্যাপ্লিকেশন তৈরি
+    bot_app = Application.builder().token(BOT_TOKEN).build()
+    bot_app.add_handler(CommandHandler("start", start))
+    bot_app.add_handler(CommandHandler("admin", admin_command))
+    bot_app.add_handler(MessageHandler(~filters.COMMAND, broadcast_handler), group=1)
+    bot_app.add_handler(CallbackQueryHandler(button_callback))
 
-    logger.info("Bot started with polling...")
-    await app.run_polling(allowed_updates=Update.ALL_TYPES)
+    await bot_app.initialize()
 
-def main():
-    nest_asyncio.apply()
-    asyncio.run(main_async())
+    # ওয়েবহুক সেটআপ (Render স্বয়ংক্রিয়ভাবে RENDER_EXTERNAL_URL দেয়)
+    render_url = os.getenv("RENDER_EXTERNAL_URL")
+    if not render_url:
+        logger.error("RENDER_EXTERNAL_URL environment variable not set")
+        return
+    webhook_url = f"{render_url}/webhook"
+    await bot_app.bot.set_webhook(url=webhook_url, allowed_updates=Update.ALL_TYPES)
+    logger.info(f"Webhook set to {webhook_url}")
+
+    # Starlette অ্যাপ তৈরি
+    starlette_app = Starlette(routes=[
+        Route("/webhook", telegram_webhook, methods=["POST"]),
+        Route("/health", health_check, methods=["GET"]),
+    ])
+
+    # uvicorn সার্ভার চালু
+    port = int(os.getenv("PORT", "8000"))
+    config = uvicorn.Config(starlette_app, host="0.0.0.0", port=port, log_level="info")
+    server = uvicorn.Server(config)
+    await server.serve()
 
 if __name__ == "__main__":
-    main()
+    import asyncio
+    asyncio.run(main())
