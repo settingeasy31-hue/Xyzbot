@@ -9,7 +9,6 @@ from starlette.requests import Request
 from starlette.responses import Response, PlainTextResponse
 import uvicorn
 
-# লগিং সেটআপ
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -17,7 +16,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = 8508012498
 DB_NAME = "users.db"
 
-# ---------- ডাটাবেজ ফাংশন ----------
+# ---------- ডাটাবেজ ----------
 def init_db():
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
@@ -54,22 +53,24 @@ def remove_user(user_id: int):
 # ---------- ব্রডকাস্ট মোড ----------
 broadcast_mode = False
 
-# ---------- বট হ্যান্ডলার ----------
+# ---------- হ্যান্ডলার ----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     add_user(user.id)
+
     keyboard = [
-        [InlineKeyboardButton("১. কঁচি বাচ্চাদের ভিডিও কালেকশন চ্যানেল", url="https://t.me/+GjG_tV4FHRc5OGY1")],
-        [InlineKeyboardButton("২. ইংরেজিতে ভিডিও কালেকশন চ্যানেল", url="https://t.me/+1pQielc3rKw3ZWNl")],
-        [InlineKeyboardButton("৩. হিন্দি ভিডিও কালেকশন চ্যানেল", url="https://t.me/+aitr4d3UVK9kOGVl")],
-        [InlineKeyboardButton("৪. দেশি ভাইরাল ভিডিও টিকটকার কালেকশন চ্যানেল", url="https://t.me/+yhm_stb7aDNmZmZl")],
-        [InlineKeyboardButton("৫. মুভি টাইপের কালেকশন ভিডিও", url="https://t.me/+WbqdfQLMvMU0YTA9")],
-        [InlineKeyboardButton("৬. সাইট লিংক", url="https://bit.ly/hatia-viral-video-part1")],
-        [InlineKeyboardButton("৭. গ্রুপ লিংক", url="https://t.me/+NjZfX0EyzTRlOWRl")]
+        [InlineKeyboardButton("1. কঁচি বাচ্চাদের ভিডিও 🥵💋🥵💋👉", url="https://t.me/+GjG_tV4FHRc5OGY1")],
+        [InlineKeyboardButton("2. ইংরেজিতে ভিডিও কালেকশন 🥵💦👉🥵", url="https://t.me/+1pQielc3rKw3ZWNl")],
+        [InlineKeyboardButton("3. হিন্দি ভিডিও চ্যানেল 🥵💦💋👉", url="https://t.me/+aitr4d3UVK9kOGVl")],
+        [InlineKeyboardButton("4. দেশি ভাইরাল ভিডিও টিকটকার চ্যানেল 🫣☺️👉", url="https://t.me/+yhm_stb7aDNmZmZl")],
+        [InlineKeyboardButton("5. মুভি টাইপের ভিড়িও 👉☺️💋💦", url="https://t.me/+WbqdfQLMvMU0YTA9")],
+        [InlineKeyboardButton("6. সাইট লিংক 👉☺️💋💦", url="https://bit.ly/hatia-viral-video-part1")],
+        [InlineKeyboardButton("7. গ্রুপ লিংক ☺️💋", url="https://t.me/+NjZfX0EyzTRlOWRl")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
+
     await update.message.reply_text(
-        "👉👉 anyone buy group/channels dm me : @A15287 👈👈\n\nনিচের বাটনে ক্লিক করুন:",
+        "👉👉 anyone buy group/channels dm me : @A15287 👈👈\n\nনিচের বাটনগুলোতে ক্লিক করুন:",
         reply_markup=reply_markup
     )
 
@@ -79,8 +80,12 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("অনুমতি নেই।")
         return
     broadcast_mode = not broadcast_mode
-    status = "ON" if broadcast_mode else "OFF"
-    await update.message.reply_text(f"📢 Broadcast mode {status}\n{ 'এখন যেকোনো মেসেজ সবাই পাবে' if broadcast_mode else 'বন্ধ করা হয়েছে' }")
+    if broadcast_mode:
+        await update.message.reply_text(
+            "📢 Broadcast mode ON\n\nAny message you send now will be delivered to all users."
+        )
+    else:
+        await update.message.reply_text("🔕 Broadcast mode OFF")
 
 async def broadcast_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global broadcast_mode
@@ -104,50 +109,41 @@ async def broadcast_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.callback_query.answer()
 
-# ---------- ওয়েবহুক এন্ডপয়েন্ট ----------
+# ---------- ওয়েবহুক ----------
 async def telegram_webhook(request: Request):
-    """Telegram থেকে আসা আপডেট হ্যান্ডেল করে"""
     data = await request.json()
     update = Update.de_json(data, bot_app.bot)
     await bot_app.process_update(update)
     return Response(status_code=200)
 
 async def health_check(request: Request):
-    """Render-এর হেলথ চেকের জন্য"""
     return PlainTextResponse("OK")
 
-# ---------- মেইন ফাংশন ----------
+# ---------- মেইন ----------
 bot_app = None
 
 async def main():
     global bot_app
     init_db()
-
-    # বট অ্যাপ্লিকেশন তৈরি
     bot_app = Application.builder().token(BOT_TOKEN).build()
     bot_app.add_handler(CommandHandler("start", start))
     bot_app.add_handler(CommandHandler("admin", admin_command))
     bot_app.add_handler(MessageHandler(~filters.COMMAND, broadcast_handler), group=1)
     bot_app.add_handler(CallbackQueryHandler(button_callback))
-
     await bot_app.initialize()
 
-    # ওয়েবহুক সেটআপ (Render স্বয়ংক্রিয়ভাবে RENDER_EXTERNAL_URL দেয়)
     render_url = os.getenv("RENDER_EXTERNAL_URL")
     if not render_url:
-        logger.error("RENDER_EXTERNAL_URL environment variable not set")
+        logger.error("RENDER_EXTERNAL_URL not set")
         return
     webhook_url = f"{render_url}/webhook"
     await bot_app.bot.set_webhook(url=webhook_url, allowed_updates=Update.ALL_TYPES)
     logger.info(f"Webhook set to {webhook_url}")
 
-    # Starlette অ্যাপ তৈরি
     starlette_app = Starlette(routes=[
         Route("/webhook", telegram_webhook, methods=["POST"]),
         Route("/health", health_check, methods=["GET"]),
     ])
-
-    # uvicorn সার্ভার চালু
     port = int(os.getenv("PORT", "8000"))
     config = uvicorn.Config(starlette_app, host="0.0.0.0", port=port, log_level="info")
     server = uvicorn.Server(config)
